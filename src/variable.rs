@@ -1,7 +1,9 @@
-use super::*;
-use rand::Rng;
-use rhai::{CustomType, TypeBuilder};
-use std::sync::Arc;
+use {
+    super::*,
+    rand::Rng,
+    rhai::{CustomType, TypeBuilder},
+    std::sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct Variable {
@@ -566,7 +568,7 @@ mod tests {
 
     #[test]
     fn construction() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = "\
         let u1 = uniform(0.0, 1.0);
         let u2 = uniform(0.1, 0.2);
@@ -579,7 +581,7 @@ mod tests {
 
     #[test]
     fn distributions() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = include_str!("../examples/distributions.rm");
 
         engine.run(source).unwrap();
@@ -587,7 +589,7 @@ mod tests {
 
     #[test]
     fn basic_functions() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = include_str!("../examples/basic_functions.rm");
 
         engine.run(source).unwrap();

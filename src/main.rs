@@ -1,6 +1,6 @@
 use {
     clap::Parser,
-    ruminant::{DisplayMode, Engine},
+    ruminant::{DisplayMode, Engine, EngineOpts},
     std::io::Read,
 };
 
@@ -19,7 +19,9 @@ fn main() -> Result<(), String> {
 
     println!("Display mode is {:?}", args.display_mode);
 
-    let mut engine = Engine::new(Some(args.display_mode));
+    let mut engine = Engine::new(EngineOpts {
+        display_mode: args.display_mode,
+    });
 
     let mut source = String::new();
     let mut file = std::fs::File::open(&args.file).map_err(|e| format!("{:?}", e))?;

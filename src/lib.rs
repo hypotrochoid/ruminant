@@ -4,17 +4,14 @@ use {
     clap::ValueEnum,
     itertools::Itertools,
     parking_lot::RwLock,
-    rhai::{
-        Dynamic, Engine as RhaiEngine, LexError, Position,
-    },
+    rhai::{Dynamic, Engine as RhaiEngine, LexError, Position},
     std::{
-        collections::HashMap
-        , iter,
+        collections::HashMap,
+        iter,
         ops::{Range, RangeInclusive},
         sync::Arc,
     },
-    textplots::{Chart, Plot, Shape}
-    ,
+    textplots::{Chart, Plot, Shape},
 };
 
 mod distribution;
@@ -48,6 +45,11 @@ impl Default for DisplayMode {
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Default)]
+pub struct EngineOpts {
+    pub display_mode: DisplayMode,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ParticleKey {
     pub generation: usize,
@@ -67,13 +69,17 @@ pub struct Scenario {
 pub struct EngineCtx {
     variables: RwLock<Vec<Variable>>,
     variable_index: RwLock<HashMap<String, usize>>,
-    #[allow(dead_code)]
-    scenario_index: RwLock<HashMap<String, usize>>,
     variable_id_index: RwLock<HashMap<u128, usize>>,
     particles: RwLock<HashMap<ParticleKey, Particle>>,
+    opts: EngineOpts,
 }
 
 impl EngineCtx {
+    pub fn new(opts: EngineOpts) -> Self {
+        let mut rv = EngineCtx::default();
+        rv.opts = opts;
+        rv
+    }
     pub fn variable_id_name(&self, id: u128) -> Option<String> {
         let ind = { self.variable_id_index.read().get(&id).cloned() };
         Some(self.variables.read().get(ind?)?.name.clone())
@@ -90,10 +96,9 @@ impl EngineCtx {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct EngineRef {
     engine: Arc<EngineCtx>,
-    display_mode: DisplayMode,
 }
 
 pub struct Engine {
@@ -101,12 +106,17 @@ pub struct Engine {
     ctx: EngineRef,
 }
 
+impl Default for Engine {
+    fn default() -> Self {
+        Engine::new(EngineOpts::default())
+    }
+}
+
 impl Engine {
-    pub fn new(display_mode: Option<DisplayMode>) -> Engine {
+    pub fn new(engine_opts: EngineOpts) -> Engine {
         let mut engine = RhaiEngine::new();
         let ctx = EngineRef {
-            engine: Arc::new(EngineCtx::default()),
-            display_mode: display_mode.unwrap_or(DisplayMode::Text),
+            engine: Arc::new(EngineCtx::new(engine_opts)),
         };
 
         engine
@@ -360,7 +370,8 @@ impl Engine {
                             .get_string_value()
                             .ok_or_else(|| {
                                 "parent field in \
-                    choice unspecified".to_string()
+                    choice unspecified"
+                                    .to_string()
                             })?
                             .to_string(),
                     )
@@ -590,7 +601,7 @@ impl Engine {
                 values: values.clone(),
             };
 
-            match ctx.display_mode {
+            match ctx.engine.opts.display_mode {
                 DisplayMode::Text => {
                     println!(
                         "{{\"variable\": \"{}\", \"mean\": {}, \"std\":{}, \"q10\":{},\"q25\":{},\
@@ -690,17 +701,15 @@ mod tests {
     use super::*;
     #[test]
     fn var_syntax() {
-        let mut engine = Engine::new(None);
-        let source = "\
-        prior u1 = uniform(0.0, 1.0);
+        let mut engine = Engine::default();
+        let source = "prior u1 = uniform(0.0, 1.0);
         prior u2 = 2.0;
         prior u3 = true;
         prior u4 = 2;
         prior u5 = 1..7;
         prior u6 = u1 + u2;
 
-        report(u6);
-        ";
+        report(u6);";
 
         engine.run(source).unwrap();
 
@@ -709,7 +718,7 @@ mod tests {
 
     #[test]
     fn p_syntax() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = "\
         prior u1 = uniform(0.0, 1.0);
 
@@ -727,7 +736,7 @@ mod tests {
 
     #[test]
     fn choice_syntax() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = include_str!("../examples/choice_syntax.rm");
 
         engine.run(source).unwrap();
@@ -736,7 +745,7 @@ mod tests {
     }
     #[test]
     fn conditional_p_syntax() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = include_str!("../examples/conditional_probability.rm");
 
         engine.run(source).unwrap();
@@ -746,7 +755,7 @@ mod tests {
 
     #[test]
     fn conditional_expectation_syntax() {
-        let mut engine = Engine::new(None);
+        let mut engine = Engine::default();
         let source = include_str!("../examples/conditional_expectation.rm");
 
         engine.run(source).unwrap();

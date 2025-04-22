@@ -1,8 +1,9 @@
-use super::math::*;
-use super::{VariableExpr, apply1};
-use rand::Rng;
-use rand_distr::Distribution;
-use statrs::function::erf::erf_inv;
+use {
+    super::{VariableExpr, apply1, math::*},
+    rand::Rng,
+    rand_distr::Distribution,
+    statrs::function::erf::erf_inv,
+};
 
 #[derive(Clone, Debug)]
 pub enum DistributionVariable {
