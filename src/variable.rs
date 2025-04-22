@@ -6,6 +6,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct Variable {
     pub name: String,
+    #[allow(dead_code)]
     prior: VariableExpr,
     conditionals: Arc<RwLock<Vec<Conditional>>>,
     posterior: VariableExpr,
@@ -565,7 +566,7 @@ mod tests {
 
     #[test]
     fn construction() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = "\
         let u1 = uniform(0.0, 1.0);
         let u2 = uniform(0.1, 0.2);
@@ -578,7 +579,7 @@ mod tests {
 
     #[test]
     fn distributions() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = include_str!("../examples/distributions.rm");
 
         engine.run(source).unwrap();
@@ -586,7 +587,7 @@ mod tests {
 
     #[test]
     fn basic_functions() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = include_str!("../examples/basic_functions.rm");
 
         engine.run(source).unwrap();
