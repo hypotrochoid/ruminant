@@ -93,6 +93,10 @@ impl Engine {
                             let r: Range<i64> = value.cast();
                             uniform(r.start as f64, r.end as f64)
                         }
+                        "core::ops::range::Range<f64>" => {
+                            let r: Range<f64> = value.cast();
+                            uniform(r.start, r.end)
+                        }
                         "core::ops::range::RangeInclusive<i64>" => {
                             let r: RangeInclusive<i64> = value.cast();
                             uniform(*r.start() as f64, *r.end() as f64)
@@ -159,13 +163,33 @@ impl Engine {
             let ctx = ctx.clone();
             let id = var.key;
 
-            let samples: Vec<f64> = (0..10000).map(|n| var.eval(&ctx, n, 0).unwrap()).collect();
-            let mean = samples.iter().fold(0.0, |acc, v| acc + v) / samples.len() as f64;
             let name = ctx
                 .engine
                 .variable_id_name(id)
                 .unwrap_or_else(|| format!("{}", id));
-            println!("Variable {{{}}} mean {{{}}}", name, mean);
+
+            let values = var
+                .eval_n(&ctx, 0, 10000)
+                .map_err(|e| format!("error sampling {}:{}", name, e))
+                .unwrap();
+
+            let report = Report {
+                name: name.clone(),
+                values,
+            };
+
+            println!(
+                "{{\"variable\": \"{}\", \"mean\": {}, \"std\":{}, \"q10\":{},\"q25\":{},\
+            \"q50\":{},\"q75\":{},\"q90\":{}}}",
+                name,
+                report.mean(),
+                report.std(),
+                report.quantile(0.1),
+                report.quantile(0.25),
+                report.quantile(0.5),
+                report.quantile(0.75),
+                report.quantile(0.9)
+            );
         }
     }
 

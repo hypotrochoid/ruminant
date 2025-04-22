@@ -15,11 +15,13 @@ pub struct VariableExpr {
 }
 
 impl VariableExpr {
-    pub fn new<F: Fn(&EngineRef, usize, usize) -> f64 + 'static>(f: F) -> VariableExpr {
+    pub fn new<F: Fn(&EngineRef, usize, usize) -> Result<f64, String> + 'static>(
+        f: F,
+    ) -> VariableExpr {
         VariableExpr {
             key: uuid::Uuid::now_v7().as_u128(),
             xform: Arc::new(move |engine: &EngineRef, generation: usize, time: usize| {
-                Ok(f(engine, generation, time))
+                f(engine, generation, time)
             }),
         }
     }
@@ -110,6 +112,9 @@ impl VariableExpr {
     pub fn atan2(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.atan2(y), self, other)
     }
+    pub fn atan2_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.atan2(other), self)
+    }
     pub fn atanh(self) -> VariableExpr {
         apply1(|x| x.atanh(), self)
     }
@@ -125,6 +130,9 @@ impl VariableExpr {
     pub fn copysign(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.copysign(y), self, other)
     }
+    pub fn copysign_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.copysign(other), self)
+    }
     pub fn cos(self) -> VariableExpr {
         apply1(|x| x.cos(), self)
     }
@@ -134,6 +142,11 @@ impl VariableExpr {
     pub fn div_euclid(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.div_euclid(y), self, other)
     }
+
+    pub fn div_euclid_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.div_euclid(other), self)
+    }
+
     pub fn exp(self) -> VariableExpr {
         apply1(|x| x.exp(), self)
     }
@@ -151,6 +164,10 @@ impl VariableExpr {
     }
     pub fn hypot(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.hypot(y), self, other)
+    }
+
+    pub fn hypot_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.hypot(other), self)
     }
 
     pub fn is_finite(self) -> VariableExpr {
@@ -184,6 +201,9 @@ impl VariableExpr {
     pub fn log(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.log(y), self, other)
     }
+    pub fn log_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.log(other), self)
+    }
     pub fn log10(self) -> VariableExpr {
         apply1(|x| x.log10(), self)
     }
@@ -193,17 +213,34 @@ impl VariableExpr {
     pub fn max(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.max(y), self, other)
     }
+    pub fn max_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.max(other), self)
+    }
     pub fn maximum(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.maximum(y), self, other)
+    }
+    pub fn maximum_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.maximum(other), self)
     }
     pub fn midpoint(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.midpoint(y), self, other)
     }
+    pub fn midpoint_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.midpoint(other), self)
+    }
     pub fn min(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.min(y), self, other)
     }
+    pub fn min_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.min(other), self)
+    }
+
     pub fn minimum(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.minimum(y), self, other)
+    }
+
+    pub fn minimum_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.minimum(other), self)
     }
     pub fn next_down(self) -> VariableExpr {
         apply1(|x| x.next_down(), self)
@@ -214,11 +251,17 @@ impl VariableExpr {
     pub fn powf(self, other: Self) -> VariableExpr {
         apply2(|x, y| x.powf(y), self, other)
     }
+    pub fn powf_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.powf(other), self)
+    }
     pub fn recip(self) -> VariableExpr {
         apply1(|x| x.recip(), self)
     }
     pub fn rem_euclid(self, other: VariableExpr) -> VariableExpr {
         apply2(|x, y| x.rem_euclid(y), self, other)
+    }
+    pub fn rem_euclid_f(self, other: f64) -> VariableExpr {
+        apply1(move |x| x.rem_euclid(other), self)
     }
     pub fn round(self) -> VariableExpr {
         apply1(|x| x.round(), self)
@@ -250,10 +293,16 @@ impl VariableExpr {
     pub fn to_radians(self) -> VariableExpr {
         apply1(|x| x.to_radians(), self)
     }
-    pub fn geq(self, a: f64) -> VariableExpr {
+    pub fn geq(self, other: VariableExpr) -> VariableExpr {
+        apply2(move |x, y| if x >= y { 1.0 } else { 0.0 }, self, other)
+    }
+    pub fn geq_f(self, a: f64) -> VariableExpr {
         apply1(move |x| if x >= a { 1.0 } else { 0.0 }, self)
     }
-    pub fn leq(self, a: f64) -> VariableExpr {
+    pub fn leq(self, other: VariableExpr) -> VariableExpr {
+        apply2(move |x, y| if x <= y { 1.0 } else { 0.0 }, self, other)
+    }
+    pub fn leq_f(self, a: f64) -> VariableExpr {
         apply1(move |x| if x <= a { 1.0 } else { 0.0 }, self)
     }
     pub fn mul(self, a: f64) -> VariableExpr {
@@ -326,7 +375,24 @@ impl CustomType for VariableExpr {
         builder
             .with_name("RandomVariable")
             // Constructors
+            .with_fn("constant", constant)
             .with_fn("uniform", uniform)
+            .with_fn("uniform", uniform)
+            .with_fn("uniform", uniform)
+            .with_fn("normal", normal)
+            .with_fn("bernoulli", bernoulli)
+            .with_fn("poisson", poisson)
+            .with_fn("exponential", exponential)
+            // .with_fn("choice", choice)
+            .with_fn("pareto", pareto)
+            .with_fn("skew_normal", skew_normal)
+            .with_fn("normal_range", normal_range)
+            .with_fn("log_normal_range", log_normal_range)
+            .with_fn("skewed_log_normal", skewed_log_normal)
+            .with_fn(
+                "log_normal_range_pct_deviation_at",
+                log_normal_range_pct_deviation_at,
+            )
             // Operators
             .with_fn("==", a2(|x, y| indicator(x == y)))
             .with_fn("!=", a2(|x, y| indicator(x != y)))
@@ -347,7 +413,74 @@ impl CustomType for VariableExpr {
             .with_fn("**", a2(|x, y| x.powf(y)))
             // .with_fn(">>", a2(|x, y| x >> y))
             // .with_fn("<<", a2(|x, y| x << y))
-        ;
+            // Normal functions
+            .with_fn("abs", VariableExpr::abs)
+            .with_fn("acos", VariableExpr::acos)
+            .with_fn("acosh", VariableExpr::acosh)
+            .with_fn("asin", VariableExpr::asin)
+            .with_fn("atan", VariableExpr::atan)
+            .with_fn("atan2", VariableExpr::atan2)
+            .with_fn("atan2", VariableExpr::atan2_f)
+            .with_fn("cbrt", VariableExpr::cbrt)
+            .with_fn("ceil", VariableExpr::ceil)
+            .with_fn("clamp", VariableExpr::clamp)
+            .with_fn("copysign", VariableExpr::copysign)
+            .with_fn("copysign", VariableExpr::copysign_f)
+            .with_fn("cos", VariableExpr::cos)
+            .with_fn("cosh", VariableExpr::cosh)
+            .with_fn("div_euclid", VariableExpr::div_euclid)
+            .with_fn("div_euclid", VariableExpr::div_euclid_f)
+            .with_fn("exp", VariableExpr::exp)
+            .with_fn("exp2", VariableExpr::exp2)
+            .with_fn("exp_m1", VariableExpr::exp_m1)
+            .with_fn("floor", VariableExpr::floor)
+            .with_fn("hypot", VariableExpr::hypot)
+            .with_fn("hypot", VariableExpr::hypot_f)
+            .with_fn("is_finite", VariableExpr::is_finite)
+            .with_fn("is_infinite", VariableExpr::is_infinite)
+            .with_fn("is_nan", VariableExpr::is_nan)
+            .with_fn("is_normal", VariableExpr::is_normal)
+            .with_fn("is_sign_negative", VariableExpr::is_sign_negative)
+            .with_fn("is_sign_positive", VariableExpr::is_sign_positive)
+            .with_fn("is_subnormal", VariableExpr::is_subnormal)
+            .with_fn("ln", VariableExpr::ln)
+            .with_fn("ln_1p", VariableExpr::ln_1p)
+            .with_fn("log", VariableExpr::log)
+            .with_fn("log", VariableExpr::log_f)
+            .with_fn("log10", VariableExpr::log10)
+            .with_fn("log2", VariableExpr::log2)
+            .with_fn("max", VariableExpr::max)
+            .with_fn("max", VariableExpr::max_f)
+            .with_fn("maximum", VariableExpr::maximum)
+            .with_fn("maximum", VariableExpr::maximum_f)
+            .with_fn("midpoint", VariableExpr::midpoint)
+            .with_fn("midpoint", VariableExpr::midpoint_f)
+            .with_fn("min", VariableExpr::min)
+            .with_fn("min", VariableExpr::min_f)
+            .with_fn("minimum", VariableExpr::minimum)
+            .with_fn("minimum", VariableExpr::minimum_f)
+            .with_fn("next_down", VariableExpr::next_down)
+            .with_fn("next_up", VariableExpr::next_up)
+            .with_fn("powf", VariableExpr::powf)
+            .with_fn("powf", VariableExpr::powf_f)
+            .with_fn("recip", VariableExpr::recip)
+            .with_fn("rem_euclid", VariableExpr::rem_euclid)
+            .with_fn("rem_euclid", VariableExpr::rem_euclid_f)
+            .with_fn("round", VariableExpr::round)
+            .with_fn("round_ties_even", VariableExpr::round_ties_even)
+            .with_fn("signum", VariableExpr::signum)
+            .with_fn("sin", VariableExpr::sin)
+            .with_fn("sinh", VariableExpr::sinh)
+            .with_fn("sqrt", VariableExpr::sqrt)
+            .with_fn("tan", VariableExpr::tan)
+            .with_fn("tanh", VariableExpr::tanh)
+            .with_fn("to_degrees", VariableExpr::to_degrees)
+            .with_fn("to_radians", VariableExpr::to_radians)
+            .with_fn("geq", VariableExpr::geq)
+            .with_fn("geq", VariableExpr::geq_f)
+            .with_fn("leq", VariableExpr::leq)
+            .with_fn("leq", VariableExpr::leq_f)
+            .with_fn("mul", VariableExpr::mul);
     }
 }
 
@@ -364,6 +497,22 @@ mod tests {
         let u3 = u1 + u2;
         report(u3);
         ";
+
+        engine.run(source).unwrap();
+    }
+
+    #[test]
+    fn distributions() {
+        let mut engine = Engine::new();
+        let source = include_str!("examples/distributions.rm");
+
+        engine.run(source).unwrap();
+    }
+
+    #[test]
+    fn basic_functions() {
+        let mut engine = Engine::new();
+        let source = include_str!("examples/basic_functions.rm");
 
         engine.run(source).unwrap();
     }

@@ -58,33 +58,76 @@ impl DistributionVariable {
         }
     }
 
-    fn sample_n(&self, mut rng: &mut impl Rng, n: usize) -> Vec<f64> {
+    fn sample_n(&self, mut rng: &mut impl Rng, n: usize) -> Result<Vec<f64>, String> {
         (0..n).map(|_| self.sample(&mut rng)).collect()
     }
-    fn sample(&self, mut rng: &mut impl Rng) -> f64 {
-        match self {
-            DistributionVariable::Uniform { min, max } => {
-                rand_distr::Uniform::new(min, max).unwrap().sample(rng)
-            }
-            DistributionVariable::Normal { mean, std } => {
-                rand_distr::Normal::new(*mean, *std).unwrap().sample(rng)
-            }
+    fn sample(&self, mut rng: &mut impl Rng) -> Result<f64, String> {
+        Ok(match self {
+            DistributionVariable::Uniform { min, max } => rand_distr::Uniform::new(min, max)
+                .map_err(|e| {
+                    format!(
+                        "error building uniform: \
+                {}",
+                        e
+                    )
+                })?
+                .sample(rng),
+            DistributionVariable::Normal { mean, std } => rand_distr::Normal::new(*mean, *std)
+                .map_err(|e| {
+                    format!(
+                        "error building normal: \
+                {}",
+                        e
+                    )
+                })?
+                .sample(rng),
             DistributionVariable::Bernoulli { p } => {
-                if rand_distr::Bernoulli::new(*p).unwrap().sample(rng) {
+                if rand_distr::Bernoulli::new(*p)
+                    .map_err(|e| {
+                        format!(
+                            "error building bernoulli: \
+                {}",
+                            e
+                        )
+                    })?
+                    .sample(rng)
+                {
                     1.0
                 } else {
                     0.0
                 }
             }
             DistributionVariable::Poisson { arrival_rate } => {
-                rand_distr::Poisson::new(*arrival_rate).unwrap().sample(rng)
+                rand_distr::Poisson::new(*arrival_rate)
+                    .map_err(|e| {
+                        format!(
+                            "error building poisson: \
+                {}",
+                            e
+                        )
+                    })?
+                    .sample(rng)
             }
-            DistributionVariable::Exponential { scale } => {
-                rand_distr::Exp::new(*scale).unwrap().sample(rng)
-            }
+            DistributionVariable::Exponential { scale } => rand_distr::Exp::new(*scale)
+                .map_err(|e| {
+                    format!(
+                        "error building exponential: \
+                {}",
+                        e
+                    )
+                })?
+                .sample(rng),
             DistributionVariable::Constant(x) => *x,
             DistributionVariable::Pareto { scale, shape } => {
-                rand_distr::Pareto::new(*scale, *shape).unwrap().sample(rng)
+                rand_distr::Pareto::new(*scale, *shape)
+                    .map_err(|e| {
+                        format!(
+                            "error building pareto: \
+                {}",
+                            e
+                        )
+                    })?
+                    .sample(rng)
             }
             DistributionVariable::Choice(choices) => {
                 let ind = rng.random_range(0..choices.len());
@@ -96,57 +139,61 @@ impl DistributionVariable {
                 for (weight, val) in choices.iter() {
                     csum += *weight;
                     if csum >= sel {
-                        return *val;
+                        return Ok(*val);
                     }
                 }
-                choices.last().unwrap().1.clone()
+                choices
+                    .last()
+                    .ok_or_else(|| format!("no choices!"))?
+                    .1
+                    .clone()
             }
-        }
+        })
     }
 
-    fn mean(&self) -> f64 {
-        match self {
-            DistributionVariable::Uniform { min, max } => min.midpoint(*max),
-            DistributionVariable::Normal { mean, std } => *mean,
-            DistributionVariable::Bernoulli { p } => *p,
-            DistributionVariable::Poisson { arrival_rate } => *arrival_rate,
-            DistributionVariable::Exponential { scale } => scale.powf(-1.0),
-            DistributionVariable::Constant(x) => *x,
-            DistributionVariable::Pareto { scale, shape } => {
-                if *shape <= 1.0 {
-                    f64::INFINITY
-                } else {
-                    shape * scale / (shape - 1.0)
-                }
-            }
-            _ => {
-                self.sample_n(&mut rand::rng(), 10000)
-                    .iter()
-                    .fold(0_f64, |acc, x| acc + *x)
-                    / 10000.0
-            }
-        }
-    }
-
-    fn std(&self) -> f64 {
-        match self {
-            DistributionVariable::Uniform { min, max } => (max - min).abs() / 12.0_f64.sqrt(),
-            DistributionVariable::Normal { mean, std } => *std,
-            DistributionVariable::Bernoulli { p } => (p * (1.0 - p)).sqrt(),
-            DistributionVariable::Poisson { arrival_rate } => *arrival_rate,
-            DistributionVariable::Exponential { scale } => scale.powf(-1.0),
-            DistributionVariable::Constant(x) => 0.0,
-            _ => {
-                let mean = self.mean();
-                (self
-                    .sample_n(&mut rand::rng(), 10000)
-                    .iter()
-                    .fold(0_f64, |acc, x| acc + (*x - mean).powf(2.0))
-                    / 10000_f64)
-                    .sqrt()
-            }
-        }
-    }
+    // fn mean(&self) -> f64 {
+    //     match self {
+    //         DistributionVariable::Uniform { min, max } => min.midpoint(*max),
+    //         DistributionVariable::Normal { mean, std } => *mean,
+    //         DistributionVariable::Bernoulli { p } => *p,
+    //         DistributionVariable::Poisson { arrival_rate } => *arrival_rate,
+    //         DistributionVariable::Exponential { scale } => scale.powf(-1.0),
+    //         DistributionVariable::Constant(x) => *x,
+    //         DistributionVariable::Pareto { scale, shape } => {
+    //             if *shape <= 1.0 {
+    //                 f64::INFINITY
+    //             } else {
+    //                 shape * scale / (shape - 1.0)
+    //             }
+    //         }
+    //         _ => {
+    //             self.sample_n(&mut rand::rng(), 10000)
+    //                 .iter()
+    //                 .fold(0_f64, |acc, x| acc + *x)
+    //                 / 10000.0
+    //         }
+    //     }
+    // }
+    //
+    // fn std(&self) -> f64 {
+    //     match self {
+    //         DistributionVariable::Uniform { min, max } => (max - min).abs() / 12.0_f64.sqrt(),
+    //         DistributionVariable::Normal { mean, std } => *std,
+    //         DistributionVariable::Bernoulli { p } => (p * (1.0 - p)).sqrt(),
+    //         DistributionVariable::Poisson { arrival_rate } => *arrival_rate,
+    //         DistributionVariable::Exponential { scale } => scale.powf(-1.0),
+    //         DistributionVariable::Constant(x) => 0.0,
+    //         _ => {
+    //             let mean = self.mean();
+    //             (self
+    //                 .sample_n(&mut rand::rng(), 10000)
+    //                 .iter()
+    //                 .fold(0_f64, |acc, x| acc + (*x - mean).powf(2.0))
+    //                 / 10000_f64)
+    //                 .sqrt()
+    //         }
+    //     }
+    // }
 
     pub fn sampler(self) -> VariableExpr {
         VariableExpr::new(move |engine, generation, t| self.sample(&mut rand::rng()))
