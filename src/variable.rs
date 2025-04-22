@@ -1,11 +1,78 @@
 use super::*;
+use rand::Rng;
 use rhai::{CustomType, TypeBuilder};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Variable {
     pub name: String,
-    exec: VariableExpr,
+    prior: VariableExpr,
+    conditionals: Arc<RwLock<Vec<Conditional>>>,
+    posterior: VariableExpr,
+}
+
+impl Variable {
+    pub fn new(name: String, prior: VariableExpr, conditionals: Vec<Conditional>) -> Self {
+        let conditionals = Arc::new(RwLock::new(conditionals));
+        let posterior = Self::make_posterior(prior.clone(), conditionals.clone());
+
+        Variable {
+            name,
+            prior,
+            conditionals,
+            posterior,
+        }
+    }
+    fn make_posterior(
+        prior: VariableExpr,
+        conditionals: Arc<RwLock<Vec<Conditional>>>,
+    ) -> VariableExpr {
+        VariableExpr::new(move |engine, generation, time| {
+            let condition_lock = conditionals.read();
+            let mut values = vec![];
+            let mut total_weight = 0.0;
+            for condition in condition_lock.iter() {
+                if condition.condition.eval(engine, generation, time)? == 1.0 {
+                    let weight = condition
+                        .weight
+                        .unwrap_or_else(|| 1.0 / condition_lock.len() as f64);
+                    total_weight += weight;
+                    values.push((weight, condition.value.eval(engine, generation, time)?));
+                }
+            }
+
+            if total_weight == 0.0 {
+                return prior.eval(engine, generation, time);
+            }
+
+            let selector: f64 = rand::rng().random_range(0.0..total_weight);
+            let mut sum = 0.0;
+            for w in values.iter() {
+                sum += w.0;
+                if sum >= selector {
+                    return Ok(w.1);
+                }
+            }
+
+            // shouldn't ever happen
+            Ok(values.last().unwrap().1)
+        })
+    }
+
+    pub fn add_conditional(&self, condition: Conditional) {
+        self.conditionals.write().push(condition);
+    }
+
+    pub fn posterior(&self) -> VariableExpr {
+        self.posterior.clone()
+    }
+}
+
+#[derive(Clone)]
+pub struct Conditional {
+    pub weight: Option<f64>,
+    pub condition: VariableExpr,
+    pub value: VariableExpr,
 }
 
 #[derive(Clone)]
@@ -305,8 +372,18 @@ impl VariableExpr {
     pub fn leq_f(self, a: f64) -> VariableExpr {
         apply1(move |x| if x <= a { 1.0 } else { 0.0 }, self)
     }
-    pub fn mul(self, a: f64) -> VariableExpr {
+    pub fn mul(self, other: VariableExpr) -> VariableExpr {
+        apply2(move |x, y| x * y, self, other)
+    }
+    pub fn mul_f(self, a: f64) -> VariableExpr {
         apply1(move |x| x * a, self)
+    }
+
+    pub fn add(self, other: VariableExpr) -> VariableExpr {
+        apply2(move |x, y| x + y, self, other)
+    }
+    pub fn add_f(self, a: f64) -> VariableExpr {
+        apply1(move |x| x + a, self)
     }
 }
 
@@ -328,17 +405,13 @@ pub fn deindicator(x: f64) -> bool {
 }
 
 impl Variable {
-    pub fn new(name: String, expr: VariableExpr) -> Variable {
-        Variable { name, exec: expr }
-    }
-
     pub fn eval(
         &self,
         engine: &EngineRef,
         generation: usize,
         timestep: usize,
     ) -> Result<f64, String> {
-        self.exec.eval(engine, generation, timestep)
+        self.posterior.eval(engine, generation, timestep)
     }
 
     pub fn eval_n(
@@ -347,7 +420,7 @@ impl Variable {
         timestep: usize,
         n: usize,
     ) -> Result<Vec<f64>, String> {
-        self.exec.eval_n(engine, timestep, n)
+        self.posterior.eval_n(engine, timestep, n)
     }
     // op ==(int, int) -> bool;
     // op !=(int, int) -> bool;
@@ -400,6 +473,7 @@ impl CustomType for VariableExpr {
             .with_fn(">=", a2(|x, y| indicator(x >= y)))
             .with_fn("<", a2(|x, y| indicator(x < y)))
             .with_fn("<=", a2(|x, y| indicator(x <= y)))
+            .with_fn("!", a1(|x| 1.0 - x))
             .with_fn("&", a2(|x, y| indicator(deindicator(x) & deindicator(y))))
             .with_fn("|", a2(|x, y| indicator(deindicator(x) | deindicator(y))))
             .with_fn("^", a2(|x, y| x.powf(y)))
@@ -504,7 +578,7 @@ mod tests {
     #[test]
     fn distributions() {
         let mut engine = Engine::new();
-        let source = include_str!("examples/distributions.rm");
+        let source = include_str!("../examples/distributions.rm");
 
         engine.run(source).unwrap();
     }
@@ -512,7 +586,7 @@ mod tests {
     #[test]
     fn basic_functions() {
         let mut engine = Engine::new();
-        let source = include_str!("examples/basic_functions.rm");
+        let source = include_str!("../examples/basic_functions.rm");
 
         engine.run(source).unwrap();
     }

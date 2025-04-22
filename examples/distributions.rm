@@ -1,52 +1,52 @@
 // Constant
-var v1 = constant(1.0);
+prior v1 = constant(1.0);
 report(v1);
 
 // Uniform(min, max)
-var v2 = uniform(0.0, 1.0);
+prior v2 = uniform(0.0, 1.0);
 report(v2);
 
 // Normal(Mean, StdDev)
-var v3 = normal(0.0, 1.0);
+prior v3 = normal(0.0, 1.0);
 report(v3);
 
 // Bernoulli(Probability)
-var v4 = bernoulli(0.5);
+prior v4 = bernoulli(0.5);
 report(v4);
 
 // Poisson(ArrivalRate)
-var v5 = poisson(5.0);
+prior v5 = poisson(5.0);
 report(v5);
 
 // Exponential(Scale)
-var v6 = exponential(0.5);
+prior v6 = exponential(0.5);
 report(v6);
 
 // Pareto(Median, Mode)
-var v7 = pareto(1.5, 1.0);
+prior v7 = pareto(1.5, 1.0);
 report(v7);
 
 // SkewNormal(10%_Quantile, 50%_Quantile, 90%_Quantile)
 // Normal asymmetrically skewed to match the provided quantiles.
-var v8 = skew_normal(0.1, 1.0, 2.6);
+prior v8 = skew_normal(0.1, 1.0, 2.6);
 report(v8);
 
 // NormalRange(4StdBelowMean, 4StdAboveMean)
 // clamped to have 0 mass outside of the provided limits
-var v9 = normal_range(0.0, 10.0);
+prior v9 = normal_range(0.0, 10.0);
 report(v9);
 
 // LogNormalRange(4StdBelowMean, 4StdAboveMean)
 // clamped to have 0 mass outside of the provided limits
-var v10 = log_normal_range(1.0, 10.0);
+prior v10 = log_normal_range(1.0, 10.0);
 report(v10);
 
 // SkewedLogNormal(10%_Quantile, 50%_Quantile, 90%_Quantile)
 // LogNormal asymmetrically skewed to match the provided quantiles.
-var v11 = skewed_log_normal(0.1, 1.0, 2.6);
+prior v11 = skewed_log_normal(0.1, 1.0, 2.6);
 report(v11);
 
 // LogNormalRangePctDeviationAt(DistCenter, %Deviation)
 // Lognormal at the given center, clamped to be 0 outside of the given percentage band
-var v12 = log_normal_range_pct_deviation_at(1.0, 0.5);
+prior v12 = log_normal_range_pct_deviation_at(1.0, 0.5);
 report(v12);
