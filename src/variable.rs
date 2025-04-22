@@ -53,6 +53,14 @@ impl VariableExpr {
 
         Ok(value)
     }
+    pub fn eval_n(
+        &self,
+        engine: &EngineRef,
+        timestep: usize,
+        n: usize,
+    ) -> Result<Vec<f64>, String> {
+        (0..n).map(|i| self.eval(engine, i, timestep)).collect()
+    }
 }
 
 pub fn apply1<F: Fn(f64) -> f64 + 'static>(f: F, v: VariableExpr) -> VariableExpr {
@@ -271,6 +279,27 @@ pub fn deindicator(x: f64) -> bool {
 }
 
 impl Variable {
+    pub fn new(name: String, expr: VariableExpr) -> Variable {
+        Variable { name, exec: expr }
+    }
+
+    pub fn eval(
+        &self,
+        engine: &EngineRef,
+        generation: usize,
+        timestep: usize,
+    ) -> Result<f64, String> {
+        self.exec.eval(engine, generation, timestep)
+    }
+
+    pub fn eval_n(
+        &self,
+        engine: &EngineRef,
+        timestep: usize,
+        n: usize,
+    ) -> Result<Vec<f64>, String> {
+        self.exec.eval_n(engine, timestep, n)
+    }
     // op ==(int, int) -> bool;
     // op !=(int, int) -> bool;
     // op >(int, int) -> bool;

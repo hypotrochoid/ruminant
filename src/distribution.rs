@@ -154,6 +154,9 @@ impl DistributionVariable {
 }
 
 // ergonomic functions
+pub fn constant(value: f64) -> VariableExpr {
+    DistributionVariable::Constant(value).sampler()
+}
 pub fn uniform(min: f64, max: f64) -> VariableExpr {
     DistributionVariable::Uniform { min, max }.sampler()
 }
