@@ -554,7 +554,8 @@ impl CustomType for VariableExpr {
             .with_fn("geq", VariableExpr::geq_f)
             .with_fn("leq", VariableExpr::leq)
             .with_fn("leq", VariableExpr::leq_f)
-            .with_fn("mul", VariableExpr::mul);
+            .with_fn("mul", VariableExpr::mul)
+            .with_fn("mul", VariableExpr::mul_f);
     }
 }
 
