@@ -1,0 +1,5 @@
+var raining_today = bernoulli(0.1)
+var rain_intensity | raining_today = lognormal(0.1)
+var not_raining_today = 1.0 - raining_today
+
+// scenario not_raining_today {}
