@@ -1,5 +1,5 @@
 use super::math::*;
-use super::{VariableExpr, a1, a2, apply1};
+use super::{VariableExpr, apply1};
 use rand::Rng;
 use rand_distr::Distribution;
 use statrs::function::erf::erf_inv;
@@ -17,6 +17,7 @@ pub enum DistributionVariable {
     Pareto { scale: f64, shape: f64 },
 }
 
+#[allow(dead_code)]
 impl DistributionVariable {
     pub fn inf(&self) -> f64 {
         match self {
@@ -30,7 +31,7 @@ impl DistributionVariable {
             }
             DistributionVariable::WeightedChoice(x) => *x
                 .iter()
-                .map(|(x, y)| x)
+                .map(|(x, _y)| x)
                 .min_by(|x, y| x.partial_cmp(y).unwrap())
                 .unwrap(),
             DistributionVariable::Pareto { scale, .. } => *scale,
@@ -50,7 +51,7 @@ impl DistributionVariable {
             }
             DistributionVariable::WeightedChoice(x) => *x
                 .iter()
-                .map(|(x, y)| x)
+                .map(|(x, _y)| x)
                 .max_by(|x, y| x.partial_cmp(y).unwrap())
                 .unwrap(),
             DistributionVariable::Pareto { .. } => f64::INFINITY,
@@ -61,7 +62,7 @@ impl DistributionVariable {
     fn sample_n(&self, mut rng: &mut impl Rng, n: usize) -> Result<Vec<f64>, String> {
         (0..n).map(|_| self.sample(&mut rng)).collect()
     }
-    fn sample(&self, mut rng: &mut impl Rng) -> Result<f64, String> {
+    fn sample(&self, rng: &mut impl Rng) -> Result<f64, String> {
         Ok(match self {
             DistributionVariable::Uniform { min, max } => rand_distr::Uniform::new(min, max)
                 .map_err(|e| {
@@ -196,7 +197,7 @@ impl DistributionVariable {
     // }
 
     pub fn sampler(self) -> VariableExpr {
-        VariableExpr::new(move |engine, generation, t| self.sample(&mut rand::rng()))
+        VariableExpr::new(move |_engine, _generation, _t| self.sample(&mut rand::rng()))
     }
 }
 

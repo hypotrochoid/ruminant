@@ -1,24 +1,52 @@
 #![feature(float_minimum_maximum)]
 #![feature(sort_floats)]
-
-use itertools::Itertools;
-use parking_lot::RwLock;
-use rhai::{
-    CustomType, Dynamic, Engine as RhaiEngine, EvalAltResult, LexError, Position, TypeBuilder,
+use {
+    clap::ValueEnum,
+    itertools::Itertools,
+    parking_lot::RwLock,
+    rhai::{
+        Dynamic, Engine as RhaiEngine, LexError, Position,
+    },
+    std::{
+        collections::HashMap
+        , iter,
+        ops::{Range, RangeInclusive},
+        sync::Arc,
+    },
+    textplots::{Chart, Plot, Shape}
+    ,
 };
-use std::collections::HashMap;
-use std::iter;
-use std::ops::{Range, RangeInclusive};
-use std::sync::Arc;
-use uuid::uuid;
 
 mod distribution;
 mod math;
 mod variable;
 
-pub use distribution::*;
-pub use math::*;
-pub use variable::*;
+pub use {distribution::*, math::*, variable::*};
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum)]
+#[clap(rename_all = "kebab_case")]
+pub enum DisplayMode {
+    Text,
+    Diagram,
+}
+
+impl TryFrom<&str> for DisplayMode {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s.to_lowercase().as_str() {
+            "text" => Ok(DisplayMode::Text),
+            "diagram" => Ok(DisplayMode::Diagram),
+            _ => Err(format!("Invalid display mode: {}", s)),
+        }
+    }
+}
+
+impl Default for DisplayMode {
+    fn default() -> Self {
+        DisplayMode::Text
+    }
+}
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ParticleKey {
@@ -39,6 +67,7 @@ pub struct Scenario {
 pub struct EngineCtx {
     variables: RwLock<Vec<Variable>>,
     variable_index: RwLock<HashMap<String, usize>>,
+    #[allow(dead_code)]
     scenario_index: RwLock<HashMap<String, usize>>,
     variable_id_index: RwLock<HashMap<u128, usize>>,
     particles: RwLock<HashMap<ParticleKey, Particle>>,
@@ -64,6 +93,7 @@ impl EngineCtx {
 #[derive(Clone)]
 pub struct EngineRef {
     engine: Arc<EngineCtx>,
+    display_mode: DisplayMode,
 }
 
 pub struct Engine {
@@ -72,10 +102,11 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new() -> Engine {
+    pub fn new(display_mode: Option<DisplayMode>) -> Engine {
         let mut engine = RhaiEngine::new();
         let ctx = EngineRef {
             engine: Arc::new(EngineCtx::default()),
+            display_mode: display_mode.unwrap_or(DisplayMode::Text),
         };
 
         engine
@@ -321,17 +352,15 @@ impl Engine {
             // No variables declared/removed by this custom syntax
             true,
             // Implementation function
-            move |context, inputs, state| {
+            move |context, inputs, _state| {
                 let parent = if inputs[1].get_string_value().is_some() {
                     // if the first 2 are idents, then we have a parent cond
                     Some(
                         inputs[0]
                             .get_string_value()
                             .ok_or_else(|| {
-                                format!(
-                                    "parent field in \
-                    choice unspecified"
-                                )
+                                "parent field in \
+                    choice unspecified".to_string()
                             })?
                             .to_string(),
                     )
@@ -380,7 +409,7 @@ impl Engine {
                     acc
                 });
 
-                let mut likelihood_mass = partial_sums.last().unwrap().clone();
+                let likelihood_mass = partial_sums.last().unwrap().clone();
 
                 let selector = uniform(0.0, 1.0).mul(likelihood_mass);
 
@@ -443,7 +472,7 @@ impl Engine {
                         .cloned()
                         .ok_or_else(|| {
                             format!(
-                                "conditional supplied for variable {} without a prior. make \
+                                "conditionally supplied for variable {} without a prior. make \
                         sure to specify a prior before giving conditionals",
                                 var_name
                             )
@@ -451,7 +480,7 @@ impl Engine {
 
                     // put a reference in the index
                     {
-                        let mut lock = ctx
+                        let _lock = ctx
                             .engine
                             .variables
                             .write()
@@ -515,7 +544,7 @@ impl Engine {
 
                     // put a reference in the index
                     {
-                        let mut lock = ctx
+                        let _lock = ctx
                             .engine
                             .variables
                             .write()
@@ -558,21 +587,61 @@ impl Engine {
 
             let report = Report {
                 name: name.clone(),
-                values,
+                values: values.clone(),
             };
 
-            println!(
-                "{{\"variable\": \"{}\", \"mean\": {}, \"std\":{}, \"q10\":{},\"q25\":{},\
-            \"q50\":{},\"q75\":{},\"q90\":{}}}",
-                name,
-                report.mean(),
-                report.std(),
-                report.quantile(0.1),
-                report.quantile(0.25),
-                report.quantile(0.5),
-                report.quantile(0.75),
-                report.quantile(0.9)
-            );
+            match ctx.display_mode {
+                DisplayMode::Text => {
+                    println!(
+                        "{{\"variable\": \"{}\", \"mean\": {}, \"std\":{}, \"q10\":{},\"q25\":{},\
+                    \"q50\":{},\"q75\":{},\"q90\":{}}}",
+                        name,
+                        report.mean(),
+                        report.std(),
+                        report.quantile(0.1),
+                        report.quantile(0.25),
+                        report.quantile(0.5),
+                        report.quantile(0.75),
+                        report.quantile(0.9)
+                    );
+                }
+                DisplayMode::Diagram => {
+                    // We have to bucketify the value if we want to display it as a diagram
+                    // first, we figure out what is a reasonable bucket size based on the range of the data
+                    // then, make that many buckets and fill them with the values
+                    // defaulting to 15 buckets for now
+                    //
+                    let two_std_left = report.quantile(0.05);
+                    let two_std_right = report.quantile(0.95);
+                    let bucket_size = (two_std_right - two_std_left) / 15.0;
+
+                    let mut buckets = vec![0; 15];
+
+                    for value in &values {
+                        if value <= &two_std_left || value >= &two_std_right {
+                            continue;
+                        }
+
+                        let bucket_index = ((value - two_std_left) / bucket_size) as usize;
+                        buckets[bucket_index] += 1;
+                    }
+
+                    let points = buckets
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, count)| {
+                            let x = (two_std_left + i as f64 * bucket_size) as f32;
+                            let y = count as f32;
+                            (x, y)
+                        })
+                        .collect::<Vec<_>>();
+
+                    println!("Variable: {}", name);
+                    Chart::new(180, 60, two_std_left as f32, two_std_right as f32)
+                        .lineplot(&Shape::Bars(&points))
+                        .display();
+                }
+            }
         }
     }
 
@@ -621,7 +690,7 @@ mod tests {
     use super::*;
     #[test]
     fn var_syntax() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = "\
         prior u1 = uniform(0.0, 1.0);
         prior u2 = 2.0;
@@ -640,7 +709,7 @@ mod tests {
 
     #[test]
     fn p_syntax() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = "\
         prior u1 = uniform(0.0, 1.0);
 
@@ -658,7 +727,7 @@ mod tests {
 
     #[test]
     fn choice_syntax() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = include_str!("../examples/choice_syntax.rm");
 
         engine.run(source).unwrap();
@@ -667,7 +736,7 @@ mod tests {
     }
     #[test]
     fn conditional_p_syntax() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = include_str!("../examples/conditional_probability.rm");
 
         engine.run(source).unwrap();
@@ -677,7 +746,7 @@ mod tests {
 
     #[test]
     fn conditional_expectation_syntax() {
-        let mut engine = Engine::new();
+        let mut engine = Engine::new(None);
         let source = include_str!("../examples/conditional_expectation.rm");
 
         engine.run(source).unwrap();

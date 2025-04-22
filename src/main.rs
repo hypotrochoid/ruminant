@@ -1,18 +1,25 @@
-use clap::{Args, Parser, Subcommand};
-use ruminant::Engine;
-use std::io::Read;
+use {
+    clap::Parser,
+    ruminant::{DisplayMode, Engine},
+    std::io::Read,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct RumArgs {
     #[arg(long, short)]
     file: String,
+
+    #[clap(short, long, default_value_t, value_enum)]
+    display_mode: DisplayMode,
 }
 
 fn main() -> Result<(), String> {
     let args = RumArgs::parse();
 
-    let mut engine = Engine::new();
+    println!("Display mode is {:?}", args.display_mode);
+
+    let mut engine = Engine::new(Some(args.display_mode));
 
     let mut source = String::new();
     let mut file = std::fs::File::open(&args.file).map_err(|e| format!("{:?}", e))?;
