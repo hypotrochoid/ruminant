@@ -1,0 +1,18 @@
+prior u1 = uniform(0.0, 1.0);
+
+// this syntax is shorthand for a bernoulli variable
+// it is somewhat more general than the 'bernoulli' function
+// because the right hand side can be non-constant
+P[some_event] = 0.5;
+
+// this (sorry, ugly) syntax allows specifying conditional probabilities
+// if the conditioning event is satisfied, then the variable (here, "some_event")
+// will be substituted with the left hand side
+// the weight is mandatory, because there is no mechanism for resolving conflicting
+// non-disjoint conditioning events. the weight factor will be used to blend
+// overlapping condition states proportionally to their weights
+// *you can't specify conditional probabilities without giving a prior*
+weight 1 P[some_event | u1] = 0.1;
+weight 1 P[some_event | !u1] = 0.4;
+
+report(some_event);

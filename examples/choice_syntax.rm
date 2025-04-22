@@ -1,0 +1,27 @@
+prior u1 = uniform(0.0, 1.0);
+
+// this syntax provides a shorthand for making several mutually disjoint events
+// here, v1, v2, and v3 are disjoint, and the right hand side is evaluated
+// to determine their relative likelihoods
+// the right hand side values do not need to be constant, and they do not need
+// to sum to 1. They will be normalized by their sum in evaluation.
+choice{
+    v1 = 0.2,
+    v2 = 0.6,
+    v3 = 0.2
+}
+
+// additionally, a parent condition can be specified- this is a shorthand for
+// saying that the events w1, w2, and w3 all are subsets of the u1 event
+choice u1 {
+    w1 = 0.2,
+    w2 = 0.6,
+    w3 = 0.2
+}
+
+report(v1);
+report(v2);
+report(v3);
+report(w1);
+report(w2);
+report(w3);

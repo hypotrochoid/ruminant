@@ -85,6 +85,7 @@ impl Engine {
         Self::setup_prior_syntax(&mut engine, ctx.clone());
         Self::setup_p_syntax(&mut engine, ctx.clone());
         Self::setup_conditional_p_syntax(&mut engine, ctx.clone());
+        Self::setup_expectation_syntax(&mut engine, ctx.clone());
         Self::setup_choice_syntax(&mut engine, ctx.clone());
 
         // Register the custom syntax: var x = ???
@@ -255,7 +256,6 @@ impl Engine {
             // to be interned and shared easily, reducing allocations during parsing.
             |symbols, look_ahead, state| {
                 if !symbols.is_empty() && symbols.last().unwrap() == "}" {
-                    println!("parsing terminal");
                     // terminal
                     return Ok(Some("$$choice".into()));
                 }
@@ -270,15 +270,12 @@ impl Engine {
 
                         return Ok(Some("{".into()));
                     } else {
-                        println!("parsing parent");
                         // parent space
                         return Ok(Some("$ident$".into()));
                     }
                 }
 
                 let state_pos: i64 = state.as_int().unwrap();
-
-                println!("parsing pos {}", state_pos);
 
                 match (state_pos) % 4 {
                     0 => {
@@ -411,60 +408,6 @@ impl Engine {
                 Ok(Dynamic::UNIT)
             },
         );
-        // .register_custom_syntax(
-        //     ["PC", "[", "$ident$", "|", "$expr$", "]", "=", "$expr$"],
-        //     false,
-        //     move |context, inputs| {
-        //         let var_name = inputs[0].get_string_value().unwrap().to_string();
-        //         let condition = &inputs[1];
-        //         let expr = &inputs[2];
-        //
-        //         // Evaluate the condition
-        //         let cond_value = context.eval_expression_tree(condition)?;
-        //         let cond_rv = Self::dynamic_to_variable(cond_value)?;
-        //         // bernoulli-fy it
-        //         let cond_rv = uniform(0.0, 1.0).leq(cond_rv);
-        //
-        //         // Evaluate the expression
-        //         let value = context.eval_expression_tree(expr)?;
-        //         let as_rv = Self::dynamic_to_variable(value)?;
-        //         // bernoulli-fy it
-        //         let as_rv = uniform(0.0, 1.0).leq(as_rv);
-        //
-        //         // this actually does nothing in rhai-world
-        //         let index = ctx
-        //             .engine
-        //             .variable_index
-        //             .read()
-        //             .get(var_name.as_str())
-        //             .cloned()
-        //             .ok_or_else(|| {
-        //                 format!(
-        //                     "conditional supplied for variable {} without a prior. make \
-        //             sure to specify a prior before giving conditionals",
-        //                     var_name
-        //                 )
-        //             })?;
-        //
-        //         // put a reference in the index
-        //         {
-        //             let mut lock = ctx
-        //                 .engine
-        //                 .variables
-        //                 .write()
-        //                 .get_mut(index)
-        //                 .unwrap()
-        //                 .add_conditional(Conditional {
-        //                     weight: None,
-        //                     condition: cond_rv,
-        //                     value: as_rv,
-        //                 });
-        //         }
-        //
-        //         Ok(Dynamic::UNIT)
-        //     },
-        // )
-        // .unwrap();
     }
 
     fn setup_conditional_p_syntax(engine: &mut RhaiEngine, ctx: EngineRef) {
@@ -530,6 +473,71 @@ impl Engine {
             )
             .unwrap();
     }
+
+    fn setup_expectation_syntax(engine: &mut RhaiEngine, ctx: EngineRef) {
+        engine
+            .register_custom_syntax(
+                [
+                    "E", "[", "$ident$", "|", "$expr$", "]", "[", "$expr$", "]", "=", "$expr$",
+                ],
+                false,
+                move |context, inputs| {
+                    let weight = &inputs[2];
+                    let var_name = inputs[0].get_string_value().unwrap().to_string();
+                    let condition = &inputs[1];
+                    let expr = &inputs[3];
+
+                    let weight_value = context.eval_expression_tree(weight)?;
+                    let weight_value = Self::dynamic_to_weight(weight_value)?;
+
+                    // Evaluate the condition
+                    let cond_value = context.eval_expression_tree(condition)?;
+                    let cond_rv = Self::dynamic_to_variable(cond_value)?;
+                    // bernoulli-fy it
+                    let cond_rv = uniform(0.0, 1.0).leq(cond_rv);
+
+                    // Evaluate the expression
+                    let value = context.eval_expression_tree(expr)?;
+                    let as_rv = Self::dynamic_to_variable(value)?;
+                    // bernoulli-fy it
+                    let as_rv = uniform(0.0, 1.0).leq(as_rv);
+
+                    // this actually does nothing in rhai-world
+                    let index = ctx
+                        .engine
+                        .variable_index
+                        .read()
+                        .get(var_name.as_str())
+                        .cloned()
+                        .ok_or_else(|| {
+                            format!(
+                                "conditional expectation supplied for variable {} without a prior. \
+                                make sure to specify a prior before giving conditionals",
+                                var_name
+                            )
+                        })?;
+
+                    // put a reference in the index
+                    {
+                        let mut lock = ctx
+                            .engine
+                            .variables
+                            .write()
+                            .get_mut(index)
+                            .unwrap()
+                            .add_conditional(Conditional {
+                                weight: Some(weight_value),
+                                condition: cond_rv,
+                                value: as_rv,
+                            });
+                    }
+
+                    Ok(Dynamic::UNIT)
+                },
+            )
+            .unwrap();
+    }
+
     pub fn run(&mut self, script: &str) -> Result<(), String> {
         Ok(self
             .rhai_engine
@@ -655,27 +663,7 @@ mod tests {
     #[test]
     fn choice_syntax() {
         let mut engine = Engine::new();
-        let source = "\
-        prior u1 = uniform(0.0, 1.0);
-
-        choice{
-            v1 = 0.2,
-            v2 = 0.6,
-            v3 = 0.2
-        }
-
-        choice u1 {
-            w1 = 0.2,
-            w2 = 0.6,
-            w3 = 0.2
-        }
-        report(v1);
-        report(v2);
-        report(v3);
-        report(w1);
-        report(w2);
-        report(w3);
-        ";
+        let source = include_str!("../examples/choice_syntax.rm");
 
         engine.run(source).unwrap();
 
@@ -684,15 +672,7 @@ mod tests {
     #[test]
     fn conditional_p_syntax() {
         let mut engine = Engine::new();
-        let source = "\
-        prior u1 = uniform(0.0, 1.0);
-
-        P[some_event] = 0.5;
-        weight 1 P[some_event | u1] = 0.1;
-        weight 1 P[some_event | !u1] = 0.4;
-
-        report(some_event);
-        ";
+        let source = include_str!("../examples/conditional_probability.rm");
 
         engine.run(source).unwrap();
 
@@ -700,10 +680,12 @@ mod tests {
     }
 
     #[test]
-    fn raincoat() {
+    fn conditional_expectation_syntax() {
         let mut engine = Engine::new();
-        let source = include_str!("../examples/raincoat.rm");
+        let source = include_str!("../examples/conditional_expectation.rm");
 
         engine.run(source).unwrap();
+
+        // assert!((engine.report("u6").unwrap().mean() - 2.5).abs() < 0.1);
     }
 }

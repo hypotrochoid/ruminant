@@ -1,0 +1,15 @@
+prior u1 = uniform(0.0, 1.0);
+prior u2 = uniform(0.0, 1.0);
+
+P[some_event] = 0.5;
+
+// this syntax allows providing a conditional expectation for a variable in
+// the case of some event
+// the number in the second set of brackets is a weight factor- this is used in
+// the case that conditioning sets are non-disjoint and several possible conditional
+// expectations could match. the weight will determine the relative likelihood that a given
+// conditional expectation will be used in the case of a conflict
+E[u1 | some_event][1] = 0.1;
+E[u1 | u2 > 0.9][1] = 0.4;
+
+report(u1);
