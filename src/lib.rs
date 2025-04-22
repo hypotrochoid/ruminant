@@ -263,8 +263,6 @@ impl Engine {
                 if state.as_int().is_err() {
                     // state not yet init
                     if look_ahead.chars().next().unwrap() == '{' {
-                        println!("parsing pos obc");
-
                         // no parent space
                         *state = 0.into();
 
@@ -340,8 +338,6 @@ impl Engine {
                 } else {
                     None
                 };
-
-                println!("choice inputs {:?}", inputs);
 
                 let mut scenarios = vec![];
                 let mut read_ind = if parent.is_none() { 0 } else { 1 };
