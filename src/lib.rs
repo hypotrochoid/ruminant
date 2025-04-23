@@ -26,6 +26,7 @@ pub use {distribution::*, math::*, variable::*};
 pub enum DisplayMode {
     Text,
     Diagram,
+    ASCII,
 }
 
 impl TryFrom<&str> for DisplayMode {
@@ -594,7 +595,7 @@ impl Engine {
                         report.quantile(0.9)
                     );
                 }
-                DisplayMode::Diagram => {
+                _ => {
                     // We have to bucketify the value if we want to display it as a diagram
                     // first, we figure out what is a reasonable bucket size based on the range of the data
                     // then, make that many buckets and fill them with the values
@@ -707,6 +708,24 @@ impl Engine {
                             q90[x.floor() as usize] as f32
                         })))
                         .display();
+                }
+                DisplayMode::ASCII => {
+                    let q10: Vec<f64> = reports.iter().map(|r| r.quantile(0.1)).collect();
+                    let q25: Vec<f64> = reports.iter().map(|r| r.quantile(0.25)).collect();
+                    let q50: Vec<f64> = reports.iter().map(|r| r.quantile(0.5)).collect();
+                    let q75: Vec<f64> = reports.iter().map(|r| r.quantile(0.75)).collect();
+                    let q90: Vec<f64> = reports.iter().map(|r| r.quantile(0.9)).collect();
+
+                    println!(
+                        "{}",
+                        rasciigraph::plot_many(
+                            vec![q10, q25, q50, q75, q90],
+                            rasciigraph::Config::default()
+                                .with_height(40)
+                                .with_width(180)
+                                .with_caption(name),
+                        )
+                    );
                 }
             }
         }

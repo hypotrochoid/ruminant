@@ -16,9 +16,6 @@ pub struct RumArgs {
 
 fn main() -> Result<(), String> {
     let args = RumArgs::parse();
-
-    println!("Display mode is {:?}", args.display_mode);
-
     let mut engine = Engine::new(EngineOpts {
         display_mode: args.display_mode,
     });
