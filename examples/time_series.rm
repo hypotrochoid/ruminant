@@ -1,13 +1,27 @@
 prior noise_process = normal(0.1, 0.5);
-prior process_center = 10.0;
-prior reversion_rate = 0.9;
 
 prior brownian_motion = 0.0;
-prior bm_prev = brownian_motion.lag(1, constant(0.0));
-E[brownian_motion | time() > 0 ][1] = bm_prev + noise_process;
 
+// the lag operator allows you to read a number of timesteps into the past
+// in:
+//  variable1.lag(steps, variable2)
+// variable2 will be substituted for the lag in the case that the requsted `steps`
+// timesteps in the past are not yet available
+prior bm_prev = brownian_motion.lag(1, constant(0.0));
+
+// recursive dependency, such as making a variable depend on its own lagged values,
+// requires using conditioned expectations like so:
+E[brownian_motion | time() > 0 ][1] = bm_prev + noise_process;
+// otherwise, the process name is not yet in scope
+// also generally lags of order n will not be available until n time steps
+
+
+// simulate is used to run a report for n many timesteps
 simulate(brownian_motion, 100);
 
+
+prior process_center = 10.0;
+prior reversion_rate = 0.9;
 
 prior ou_process = 0.0;
 prior ou_prev = ou_process.lag(1, constant(0.0));
