@@ -1,0 +1,18 @@
+prior noise_process = normal(0.1, 0.5);
+prior process_center = 10.0;
+prior reversion_rate = 0.9;
+
+prior brownian_motion = 0.0;
+prior bm_prev = brownian_motion.lag(1, constant(0.0));
+E[brownian_motion | time() > 0 ][1] = bm_prev + noise_process;
+
+simulate(brownian_motion, 100);
+
+
+prior ou_process = 0.0;
+prior ou_prev = ou_process.lag(1, constant(0.0));
+E[ou_process | time() > 0 ][1] = ou_prev
+    - reversion_rate*(ou_prev - process_center)
+    + noise_process;
+
+simulate(ou_process, 100);

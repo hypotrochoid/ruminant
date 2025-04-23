@@ -34,8 +34,10 @@ impl Variable {
             let condition_lock = conditionals.read();
             let mut values = vec![];
             let mut total_weight = 0.0;
+
             for condition in condition_lock.iter() {
-                if condition.condition.eval(engine, generation, time)? == 1.0 {
+                let cval = condition.condition.eval(engine, generation, time).unwrap();
+                if cval == 1.0 {
                     let weight = condition
                         .weight
                         .unwrap_or_else(|| 1.0 / condition_lock.len() as f64);
@@ -141,6 +143,31 @@ pub fn apply1<F: Fn(f64) -> f64 + 'static>(f: F, v: VariableExpr) -> VariableExp
         xform: Arc::new(move |engine: &EngineRef, generation: usize, time: usize| {
             Ok(f((*v.xform)(engine, generation, time)?))
         }),
+    }
+}
+
+pub fn lag(v: VariableExpr, init: VariableExpr, lag: usize) -> VariableExpr {
+    VariableExpr {
+        key: uuid::Uuid::now_v7().as_u128(),
+        xform: Arc::new(move |engine: &EngineRef, generation: usize, time: usize| {
+            if time >= lag {
+                // lag is available
+
+                Ok((*v.xform)(engine, generation, time - lag)?)
+            } else {
+                // fall back to prior
+                Ok((*init.xform)(engine, generation, time)?)
+            }
+        }),
+    }
+}
+
+pub fn current_time() -> VariableExpr {
+    VariableExpr {
+        key: uuid::Uuid::now_v7().as_u128(),
+        xform: Arc::new(
+            move |_engine: &EngineRef, _generation: usize, time: usize| Ok(time as f64),
+        ),
     }
 }
 
@@ -425,25 +452,52 @@ impl Variable {
     ) -> Result<Vec<f64>, String> {
         self.posterior.eval_n(engine, timestep, n)
     }
-    // op ==(int, int) -> bool;
-    // op !=(int, int) -> bool;
-    // op >(int, int) -> bool;
-    // op >=(int, int) -> bool;
-    // op <(int, int) -> bool;
-    // op <=(int, int) -> bool;
-    // op &(int, int) -> int;
-    // op |(int, int) -> int;
-    // op ^(int, int) -> int;
-    // op ..(int, int) -> Range<int>;
-    // op ..=(int, int) -> RangeInclusive<int>;
-    // op +(int, int) -> int;
-    // op -(int, int) -> int;
-    // op *(int, int) -> int;
-    // op /(int, int) -> int;
-    // op %(int, int) -> int;
-    // op **(int, int) -> int;
-    // op >>(int, int) -> int;
-    // op <<(int, int) -> int;
+}
+fn build_bin_op<'a, F: Fn(f64, f64) -> f64 + Clone + 'static>(
+    mut builder: TypeBuilder<'a, VariableExpr>,
+    name: &'a str,
+    op: F,
+) -> TypeBuilder<'a, VariableExpr> {
+    let o1 = op.clone();
+    let o2 = op.clone();
+    let o3 = op.clone();
+    let o4 = op.clone();
+
+    builder
+        // Operators
+        .with_fn(name, a2(op))
+        .with_fn(name, move |x: VariableExpr, y: f64| {
+            let oc = o1.clone();
+            a1(move |v| oc(v, y))(x)
+        })
+        .with_fn(name, move |x: f64, y: VariableExpr| {
+            let oc = o2.clone();
+            a1(move |v| oc(x, v))(y)
+        })
+        .with_fn(name, move |x: VariableExpr, y: i64| {
+            let oc = o3.clone();
+            a1(move |v| oc(v, y as f64))(x)
+        })
+        .with_fn(name, move |x: i64, y: VariableExpr| {
+            let oc = o4.clone();
+            a1(move |v| oc(x as f64, v))(y)
+        });
+    builder
+}
+
+fn build_bin_func<'a, F: Fn(f64, f64) -> VariableExpr + Clone + 'static>(
+    mut builder: TypeBuilder<'a, VariableExpr>,
+    name: &'a str,
+    op: F,
+) -> TypeBuilder<'a, VariableExpr> {
+    let o1 = op.clone();
+    let o2 = op.clone();
+
+    builder
+        // Operators
+        .with_fn(name, move |x: i64, y: f64| o1(x as f64, y))
+        .with_fn(name, move |x: f64, y: i64| o2(x, y as f64));
+    builder
 }
 
 impl CustomType for VariableExpr {
@@ -468,29 +522,37 @@ impl CustomType for VariableExpr {
             .with_fn(
                 "log_normal_range_pct_deviation_at",
                 log_normal_range_pct_deviation_at,
-            )
-            // Operators
-            .with_fn("==", a2(|x, y| indicator(x == y)))
-            .with_fn("!=", a2(|x, y| indicator(x != y)))
-            .with_fn(">", a2(|x, y| indicator(x > y)))
-            .with_fn(">=", a2(|x, y| indicator(x >= y)))
-            .with_fn("<", a2(|x, y| indicator(x < y)))
-            .with_fn("<=", a2(|x, y| indicator(x <= y)))
+            );
+        // Operators
+        builder = build_bin_op(builder, "==", (|x, y| indicator(x == y)));
+        builder = build_bin_op(builder, "!=", (|x, y| indicator(x != y)));
+        builder = build_bin_op(builder, ">", (|x, y| indicator(x > y)));
+        builder = build_bin_op(builder, ">=", (|x, y| indicator(x >= y)));
+        builder = build_bin_op(builder, "<", (|x, y| indicator(x < y)));
+        builder = build_bin_op(builder, "<=", (|x, y| indicator(x <= y)));
+        builder = build_bin_op(
+            builder,
+            "&",
+            (|x, y| indicator(deindicator(x) & deindicator(y))),
+        );
+        builder = build_bin_op(
+            builder,
+            "|",
+            (|x, y| indicator(deindicator(x) | deindicator(y))),
+        );
+        builder = build_bin_op(builder, "^", (|x, y| x.powf(y)));
+        builder = build_bin_func(builder, "..", |x, y| uniform(x, y));
+        builder = build_bin_func(builder, "..=", |x, y| uniform(x, y));
+        builder = build_bin_op(builder, "+", (|x, y| x + y));
+        builder = build_bin_op(builder, "-", (|x, y| x - y));
+        builder = build_bin_op(builder, "*", (|x, y| x * y));
+        builder = build_bin_op(builder, "/", (|x, y| x / y));
+        builder = build_bin_op(builder, "%", (|x, y| x % y));
+        builder = build_bin_op(builder, "**", (|x, y| x.powf(y)));
+
+        // Normal functions
+        builder
             .with_fn("!", a1(|x| 1.0 - x))
-            .with_fn("&", a2(|x, y| indicator(deindicator(x) & deindicator(y))))
-            .with_fn("|", a2(|x, y| indicator(deindicator(x) | deindicator(y))))
-            .with_fn("^", a2(|x, y| x.powf(y)))
-            .with_fn("..", |x, y| uniform(x, y))
-            .with_fn("..=", |x, y| uniform(x, y))
-            .with_fn("+", a2(|x, y| x + y))
-            .with_fn("-", a2(|x, y| x - y))
-            .with_fn("*", a2(|x, y| x * y))
-            .with_fn("/", a2(|x, y| x / y))
-            .with_fn("%", a2(|x, y| x % y))
-            .with_fn("**", a2(|x, y| x.powf(y)))
-            // .with_fn(">>", a2(|x, y| x >> y))
-            // .with_fn("<<", a2(|x, y| x << y))
-            // Normal functions
             .with_fn("abs", VariableExpr::abs)
             .with_fn("acos", VariableExpr::acos)
             .with_fn("acosh", VariableExpr::acosh)
@@ -558,7 +620,15 @@ impl CustomType for VariableExpr {
             .with_fn("leq", VariableExpr::leq)
             .with_fn("leq", VariableExpr::leq_f)
             .with_fn("mul", VariableExpr::mul)
-            .with_fn("mul", VariableExpr::mul_f);
+            .with_fn("mul", VariableExpr::mul_f)
+            // operators
+            .with_fn(
+                "lag",
+                |base: &mut VariableExpr, lag_len: i64, init: VariableExpr| {
+                    lag(base.clone(), init, lag_len as usize)
+                },
+            )
+            .with_fn("time", current_time);
     }
 }
 

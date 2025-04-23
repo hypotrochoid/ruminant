@@ -1,5 +1,6 @@
 #![feature(float_minimum_maximum)]
 #![feature(sort_floats)]
+
 use {
     clap::ValueEnum,
     itertools::Itertools,
@@ -11,7 +12,7 @@ use {
         ops::{Range, RangeInclusive},
         sync::Arc,
     },
-    textplots::{Chart, Plot, Shape},
+    textplots::{Chart, Plot, Shape, TickDisplay, TickDisplayBuilder},
 };
 
 mod distribution;
@@ -121,7 +122,8 @@ impl Engine {
 
         engine
             .build_type::<VariableExpr>()
-            .register_fn("report", Self::report_hook(ctx.clone()));
+            .register_fn("report", Self::report_hook(ctx.clone()))
+            .register_fn("simulate", Self::simulate_hook(ctx.clone()));
 
         Self::setup_prior_syntax(&mut engine, ctx.clone());
         Self::setup_p_syntax(&mut engine, ctx.clone());
@@ -181,9 +183,7 @@ impl Engine {
                     let value = context.eval_expression_tree(expr)?;
 
                     let as_rv = Self::dynamic_to_variable(value)?;
-                    let new_var = Variable::new(var_name.clone(), as_rv, vec![]);
-
-                    let posterior = new_var.posterior();
+                    let new_var = Self::make_variable(&ctx, var_name.clone(), as_rv);
                     // Push a new variable into the scope if it doesn't already exist.
                     // Otherwise just set its value.
                     if !context
@@ -191,28 +191,7 @@ impl Engine {
                         .is_constant(var_name.as_str())
                         .unwrap_or(false)
                     {
-                        context
-                            .scope_mut()
-                            .set_value(var_name.clone(), posterior.clone());
-
-                        // store the rv
-                        let index = {
-                            let mut lock = ctx.engine.variables.write();
-                            lock.push(new_var);
-                            lock.len() - 1
-                        };
-
-                        // put a reference in the index
-                        {
-                            let mut lock = ctx.engine.variable_index.write();
-                            lock.insert(var_name.clone(), index);
-                        }
-
-                        {
-                            let mut lock = ctx.engine.variable_id_index.write();
-                            lock.insert(posterior.key, index);
-                        }
-
+                        context.scope_mut().set_value(var_name.clone(), new_var);
                         Ok(Dynamic::UNIT)
                     } else {
                         Err(format!("variable {} is constant", var_name).into())
@@ -535,8 +514,6 @@ impl Engine {
                     // Evaluate the expression
                     let value = context.eval_expression_tree(expr)?;
                     let as_rv = Self::dynamic_to_variable(value)?;
-                    // bernoulli-fy it
-                    let as_rv = uniform(0.0, 1.0).leq(as_rv);
 
                     // this actually does nothing in rhai-world
                     let index = ctx
@@ -598,6 +575,7 @@ impl Engine {
 
             let report = Report {
                 name: name.clone(),
+                timestep: 0,
                 values: values.clone(),
             };
 
@@ -656,6 +634,84 @@ impl Engine {
         }
     }
 
+    pub fn simulate_hook(ctx: EngineRef) -> impl Fn(VariableExpr, i64) {
+        move |var, n_steps| {
+            let ctx = ctx.clone();
+            let id = var.key;
+
+            let name = ctx
+                .engine
+                .variable_id_name(id)
+                .unwrap_or_else(|| format!("{}", id));
+
+            let mut reports = vec![];
+
+            for timestep in 0..n_steps {
+                let values = var
+                    .eval_n(&ctx, timestep as usize, 10000)
+                    .map_err(|e| format!("error sampling {}:{}", name, e))
+                    .unwrap();
+
+                let report = Report {
+                    name: name.clone(),
+                    timestep: timestep as usize,
+                    values: values.clone(),
+                };
+
+                reports.push(report);
+            }
+
+            match ctx.engine.opts.display_mode {
+                DisplayMode::Text => {
+                    for report in reports {
+                        println!(
+                            "{{\"variable\": \"{}\", \"time\": {}, \"mean\": {}, \"std\":{}, \
+                            \"q10\":{},\"q25\":{},\
+                        \"q50\":{},\"q75\":{},\"q90\":{}}}",
+                            name,
+                            report.timestep,
+                            report.mean(),
+                            report.std(),
+                            report.quantile(0.1),
+                            report.quantile(0.25),
+                            report.quantile(0.5),
+                            report.quantile(0.75),
+                            report.quantile(0.9)
+                        );
+                    }
+                }
+                DisplayMode::Diagram => {
+                    let q10: Vec<f64> = reports.iter().map(|r| r.quantile(0.1)).collect();
+                    let q25: Vec<f64> = reports.iter().map(|r| r.quantile(0.25)).collect();
+                    let q50: Vec<f64> = reports.iter().map(|r| r.quantile(0.5)).collect();
+                    let q75: Vec<f64> = reports.iter().map(|r| r.quantile(0.75)).collect();
+                    let q90: Vec<f64> = reports.iter().map(|r| r.quantile(0.9)).collect();
+
+                    println!("Variable: {}", name);
+                    Chart::new(180, 60, 0.0, reports.len() as f32)
+                        // .x_tick_display(TickDisplay::Sparse)
+                        .y_tick_display(TickDisplay::Sparse)
+                        .lineplot(&Shape::Continuous(Box::new(|x| {
+                            q10[x.floor() as usize] as f32
+                        })))
+                        .lineplot(&Shape::Continuous(Box::new(|x| {
+                            q25[x.floor() as usize] as f32
+                        })))
+                        .lineplot(&Shape::Continuous(Box::new(|x| {
+                            q50[x.floor() as usize] as f32
+                        })))
+                        .lineplot(&Shape::Continuous(Box::new(|x| {
+                            q75[x.floor() as usize] as f32
+                        })))
+                        .lineplot(&Shape::Continuous(Box::new(|x| {
+                            q90[x.floor() as usize] as f32
+                        })))
+                        .display();
+                }
+            }
+        }
+    }
+
     pub fn report(&self, var: &str) -> Option<Report> {
         let values = self
             .ctx
@@ -665,6 +721,7 @@ impl Engine {
             .ok()?;
         Some(Report {
             name: var.to_string(),
+            timestep: 0,
             values,
         })
     }
@@ -672,6 +729,7 @@ impl Engine {
 
 pub struct Report {
     pub name: String,
+    pub timestep: usize,
     pub values: Vec<f64>,
 }
 
@@ -757,6 +815,16 @@ mod tests {
     fn conditional_expectation_syntax() {
         let mut engine = Engine::default();
         let source = include_str!("../examples/conditional_expectation.rm");
+
+        engine.run(source).unwrap();
+
+        // assert!((engine.report("u6").unwrap().mean() - 2.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn timeseries() {
+        let mut engine = Engine::default();
+        let source = include_str!("../examples/time_series.rm");
 
         engine.run(source).unwrap();
 
