@@ -1,0 +1,8 @@
+// load the raw data from a text file, then make the delta log distribution
+prior spy_delta = load("examples/spy.txt").ln().diff().distribution();
+
+// make a random walk with empirical increments
+prior log_delta_spy = 0.0;
+E[log_delta_spy | time() > 0 ][1] = log_delta_spy.lag(1, constant(0.0)) + spy_delta;
+
+simulate(log_delta_spy, 252);

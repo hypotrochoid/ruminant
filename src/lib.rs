@@ -16,10 +16,13 @@ use {
 };
 
 mod distribution;
+mod empirical;
 mod math;
+mod sequence;
+pub mod tdigest;
 mod variable;
 
-pub use {distribution::*, math::*, variable::*};
+pub use {distribution::*, empirical::*, math::*, sequence::*, variable::*};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "kebab_case")]
@@ -123,6 +126,8 @@ impl Engine {
 
         engine
             .build_type::<VariableExpr>()
+            .build_type::<Sequence>()
+            .build_type::<EmpiricalDist>()
             .register_fn("report", Self::report_hook(ctx.clone()))
             .register_fn("simulate", Self::simulate_hook(ctx.clone()));
 
@@ -844,6 +849,16 @@ mod tests {
     fn timeseries() {
         let mut engine = Engine::default();
         let source = include_str!("../examples/time_series.rm");
+
+        engine.run(source).unwrap();
+
+        // assert!((engine.report("u6").unwrap().mean() - 2.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn empirical_timeseries() {
+        let mut engine = Engine::default();
+        let source = include_str!("../examples/empircal.rm");
 
         engine.run(source).unwrap();
 

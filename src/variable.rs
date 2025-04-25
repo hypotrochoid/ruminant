@@ -71,6 +71,23 @@ impl Variable {
     pub fn posterior(&self) -> VariableExpr {
         self.posterior.clone()
     }
+    pub fn eval(
+        &self,
+        engine: &EngineRef,
+        generation: usize,
+        timestep: usize,
+    ) -> Result<f64, String> {
+        self.posterior.eval(engine, generation, timestep)
+    }
+
+    pub fn eval_n(
+        &self,
+        engine: &EngineRef,
+        timestep: usize,
+        n: usize,
+    ) -> Result<Vec<f64>, String> {
+        self.posterior.eval_n(engine, timestep, n)
+    }
 }
 
 #[derive(Clone)]
@@ -434,25 +451,6 @@ pub fn deindicator(x: f64) -> bool {
     x != 0.0
 }
 
-impl Variable {
-    pub fn eval(
-        &self,
-        engine: &EngineRef,
-        generation: usize,
-        timestep: usize,
-    ) -> Result<f64, String> {
-        self.posterior.eval(engine, generation, timestep)
-    }
-
-    pub fn eval_n(
-        &self,
-        engine: &EngineRef,
-        timestep: usize,
-        n: usize,
-    ) -> Result<Vec<f64>, String> {
-        self.posterior.eval_n(engine, timestep, n)
-    }
-}
 fn build_bin_op<'a, F: Fn(f64, f64) -> f64 + Clone + 'static>(
     mut builder: TypeBuilder<'a, VariableExpr>,
     name: &'a str,
@@ -513,7 +511,8 @@ impl CustomType for VariableExpr {
             .with_fn("bernoulli", bernoulli)
             .with_fn("poisson", poisson)
             .with_fn("exponential", exponential)
-            // .with_fn("choice", choice)
+            .with_fn("empirical", empirical)
+            // .with_fn("choice", choice
             .with_fn("pareto", pareto)
             .with_fn("skew_normal", skew_normal)
             .with_fn("normal_range", normal_range)

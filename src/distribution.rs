@@ -1,7 +1,9 @@
 use {
     super::{VariableExpr, apply1, math::*},
+    crate::Sequence,
     rand::Rng,
     rand_distr::Distribution,
+    rhai::Array,
     statrs::function::erf::erf_inv,
 };
 
@@ -319,6 +321,9 @@ pub fn log_normal_range_pct_deviation_at(center: f64, pct_dev: f64) -> VariableE
         .clamp(min, max)
 }
 
+pub fn empirical(values: Array) -> VariableExpr {
+    Sequence::new(values).unwrap().distribution()
+}
 // a = (y2 - y1)/ (x2 - x1)
 // b = y1 - x1 * a
 // linear interpolation of RVs

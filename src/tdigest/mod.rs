@@ -2,7 +2,7 @@ mod centroid;
 
 use {
     centroid::Centroid,
-    serde_json::{json, Value},
+    serde_json::{Value, json},
     std::{
         fs::File,
         io::{BufRead, BufReader},
@@ -46,7 +46,7 @@ impl Tdigest {
         }
     }
 
-    fn process(&mut self) {
+    pub fn process(&mut self) {
         if self.unprocessed.len() > 0 || self.processed.len() > self.max_processed {
             // Append all processed centroids to the unprocessed list and sort by mean
             self.unprocessed.append(&mut self.processed);
@@ -254,8 +254,7 @@ impl Tdigest {
             / self.processed_weight
     }
 
-    pub fn quantile(&mut self, q: f64) -> f64 {
-        self.process();
+    pub fn quantile_processed(&self, q: f64) -> f64 {
         if q < 0.0 || q > 1.0 || self.processed.len() == 0 {
             return ::std::f64::NAN;
         }
@@ -301,31 +300,37 @@ impl Tdigest {
         )
     }
 
+    pub fn quantile(&mut self, q: f64) -> f64 {
+        self.process();
+        self.quantile_processed(q)
+    }
+
     pub fn print_digest(&mut self) -> String {
         self.process();
         let mut result = format!(
-             "{{~variance~:~{}~,~sum~:~{}~,~count~:~{}~,~min~:~{}~,~max~:~{}~,~compression~:~{}~,~max_processed~:~{}~,~max_unprocessed~:~{}~,~processed_weight~:~{}~,~unprocessed_weight~:~{}~,~centroids~: [",
-             self.variance(),
-             self.sum(),
-             self.count(),
-             self.min(),
-             self.max(),
-             self.compression(),
-             self.max_processed(),
-             self.max_unprocessed(),
-             self.processed_weight(),
-             self.unprocessed_weight()
-         );
+            "{{~variance~:~{}~,~sum~:~{}~,~count~:~{}~,~min~:~{}~,~max~:~{}~,~compression~:~{}~,~max_processed~:~{}~,~max_unprocessed~:~{}~,~processed_weight~:~{}~,~unprocessed_weight~:~{}~,~centroids~: [",
+            self.variance(),
+            self.sum(),
+            self.count(),
+            self.min(),
+            self.max(),
+            self.compression(),
+            self.max_processed(),
+            self.max_unprocessed(),
+            self.processed_weight(),
+            self.unprocessed_weight()
+        );
         let mut rec: i32 = 0;
         for centroid in self.processed.iter() {
             if rec == 0 {
                 rec = 1;
-                result = result + &centroid.to_string();
+                result += &centroid.to_string();
             } else {
-                result = result + &",".to_string() + &centroid.to_string();
+                result += &",".to_string();
+                result += &centroid.to_string();
             }
         }
-        result = result + &"]}".to_string();
+        result += &"]}".to_string();
         result.replace("~", "\x22")
     }
 
